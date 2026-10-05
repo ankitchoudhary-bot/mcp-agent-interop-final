@@ -1,0 +1,53 @@
+# Standing regression suite (Phase 4's "runs on every change," made literal).
+#
+# Runs the full pytest suite -- unit tests, the provider's real stdio +
+# streamable-HTTP integration tests, and the five-failure-mode regression
+# suite -- on every push and pull request. None of this needs an
+# ANTHROPIC_API_KEY: ConsumerAgent's real Anthropic client is constructed
+# lazily and only touched by .run(), which nothing in tests/ calls with a
+# real client (test_consumer.py's one full-loop test uses the scripted
+# FakeAnthropicClient stand-in instead). The real-API evaluation harness
+# lives in a separate, manually-triggered workflow (eval-harness.yml) so it
+# doesn't spend API credits on every commit.
+#
+# Runs on both Ubuntu and Windows deliberately: a real hang was chased and
+# fixed during this project (an anyio CancelScope ownership-boundary bug in
+# MCPClientWrapper.connect()/close(), see ARCHITECTURE.md) that was first
+# suspected to be a Windows-specific asyncio/ProactorEventLoop quirk and
+# turned out to be platform-independent. Testing both is the direct check
+# that the actual fix holds on the platform it was originally hit on, not
+# just a theoretical one.
+
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.11", "3.12"]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Confirm core imports work
+        run: python -c "import mcp, anthropic, pydantic; print('imports OK')"
+
+      - name: Run test suite
+        run: pytest tests/ -v

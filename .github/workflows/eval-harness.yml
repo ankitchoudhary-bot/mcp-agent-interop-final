@@ -1,0 +1,43 @@
+# Real-API evaluation harness (Phase 4's tool-selection-accuracy /
+# failure-recovery-rate / latency report). This calls the real Claude API
+# and costs real (small) money per run, so it's deliberately NOT triggered
+# on every push -- only manually (workflow_dispatch) or on a weekly
+# schedule, to catch a real planner regression without burning API credits
+# on every commit the way the free tests.yml workflow can.
+#
+# Requires an ANTHROPIC_API_KEY secret configured on this repository
+# (Settings -> Secrets and variables -> Actions -> New repository secret).
+
+name: Evaluation harness (real API)
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: "Number of runs per task/failure case"
+        required: false
+        default: "3"
+  schedule:
+    - cron: "0 6 * * 1"  # Mondays, 06:00 UTC
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run evaluation harness
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CONSUMER_MODEL: claude-haiku-4-5-20251001
+        run: python -m consumer.eval_harness --runs "${{ github.event.inputs.runs || '3' }}"
